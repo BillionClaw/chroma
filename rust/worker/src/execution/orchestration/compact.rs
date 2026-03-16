@@ -10,6 +10,7 @@ use crate::execution::operators::fragment_fetch::FragmentFetcher;
 use chroma_segment::{
     blockfile_metadata::MetadataSegmentWriter,
     blockfile_record::{RecordSegmentReader, RecordSegmentWriter},
+    bloom_filter::BloomFilterManager,
     spann_provider::SpannProvider,
     types::{ChromaSegmentWriter, VectorSegmentWriter},
 };
@@ -142,6 +143,7 @@ pub struct CompactionContext {
     pub hnsw_index_uuids: HashSet<IndexUuid>, // TODO(tanujnay112): Remove after direct hnsw is solidified
     pub is_function_disabled: bool,
     pub fragment_fetcher: Option<Arc<FragmentFetcher>>,
+    pub bloom_filter_manager: Option<BloomFilterManager>,
     #[cfg(test)]
     pub poison_offset: Option<u32>,
 }
@@ -167,6 +169,7 @@ impl Clone for CompactionContext {
             hnsw_index_uuids: self.hnsw_index_uuids.clone(),
             is_function_disabled: self.is_function_disabled,
             fragment_fetcher: self.fragment_fetcher.clone(),
+            bloom_filter_manager: self.bloom_filter_manager.clone(),
             #[cfg(test)]
             poison_offset: self.poison_offset,
         }
@@ -202,6 +205,7 @@ impl CompactionContext {
             hnsw_index_uuids: self.hnsw_index_uuids.clone(),
             is_function_disabled: self.is_function_disabled,
             fragment_fetcher: self.fragment_fetcher.clone(),
+            bloom_filter_manager: self.bloom_filter_manager.clone(),
             #[cfg(test)]
             poison_offset: self.poison_offset,
         }
@@ -306,6 +310,7 @@ impl CompactionContext {
         dispatcher: ComponentHandle<Dispatcher>,
         is_function_disabled: bool,
         fragment_fetcher: Option<Arc<FragmentFetcher>>,
+        bloom_filter_manager: Option<BloomFilterManager>,
     ) -> Self {
         let orchestrator_context = OrchestratorContext::new(dispatcher.clone());
         CompactionContext {
@@ -326,6 +331,7 @@ impl CompactionContext {
             hnsw_index_uuids: HashSet::new(),
             is_function_disabled,
             fragment_fetcher,
+            bloom_filter_manager,
             #[cfg(test)]
             poison_offset: None,
         }
@@ -410,6 +416,7 @@ impl CompactionContext {
             self.spann_provider.clone(),
             self.dispatcher.clone(),
             self.fragment_fetcher.clone(),
+            self.bloom_filter_manager.clone(),
         );
 
         let log_fetch_response = match log_fetch_orchestrator.run(system.clone()).await {
@@ -945,6 +952,7 @@ pub async fn compact(
     dispatcher: ComponentHandle<Dispatcher>,
     is_function_disabled: bool,
     fragment_fetcher: Option<Arc<FragmentFetcher>>,
+    bloom_filter_manager: Option<BloomFilterManager>,
     #[cfg(test)] poison_offset: Option<u32>,
 ) -> Result<CompactionResponse, CompactionError> {
     let mut compaction_context = CompactionContext::new(
@@ -962,6 +970,7 @@ pub async fn compact(
         dispatcher.clone(),
         is_function_disabled,
         fragment_fetcher,
+        bloom_filter_manager,
     );
 
     #[cfg(test)]
@@ -1146,6 +1155,7 @@ mod tests {
             false,
             None,
             None,
+            None,
         ))
         .await;
         assert!(compact_result.is_ok());
@@ -1227,6 +1237,7 @@ mod tests {
             test_segments.spann_provider.clone(),
             dispatcher_handle.clone(),
             false,
+            None,
             None,
             None,
         ))
@@ -1355,6 +1366,7 @@ mod tests {
             false,
             None,
             None,
+            None,
         ))
         .await;
         assert!(compact_result.is_ok());
@@ -1394,6 +1406,7 @@ mod tests {
             test_segments.spann_provider.clone(),
             dispatcher_handle.clone(),
             false,
+            None,
             None,
             None,
         ))
@@ -1515,6 +1528,7 @@ mod tests {
             test_segments.spann_provider.clone(),
             dispatcher_handle.clone(),
             false,
+            None,
             None,
             None,
         ))
@@ -1701,6 +1715,7 @@ mod tests {
             spann_provider.clone(),
             dispatcher_handle.clone(),
             false,
+            None,
             None,
             None,
         ))
@@ -1901,6 +1916,7 @@ mod tests {
             spann_provider.clone(),
             dispatcher_handle.clone(),
             false,
+            None,
             None,
             Some(2), // The apply operator processing this offset will fail.
         ))
@@ -2104,6 +2120,7 @@ mod tests {
             false,
             None,
             None,
+            None,
         ))
         .await;
 
@@ -2140,6 +2157,7 @@ mod tests {
             spann_provider.clone(),
             dispatcher_handle.clone(),
             false,
+            None,
             None,
             None,
         ))
@@ -2378,6 +2396,7 @@ mod tests {
             false,
             None,
             None,
+            None,
         ))
         .await;
 
@@ -2597,6 +2616,7 @@ mod tests {
             false,
             None,
             None,
+            None,
         ))
         .await;
 
@@ -2683,6 +2703,7 @@ mod tests {
             spann_provider.clone(),
             dispatcher_handle.clone(),
             false,
+            None,
             None,
             None,
         ))
@@ -2938,6 +2959,7 @@ mod tests {
             dispatcher_handle.clone(),
             false,
             None,
+            None,
         );
 
         // Start compaction 1's log_fetch_orchestrator
@@ -2991,6 +3013,7 @@ mod tests {
             dispatcher_handle.clone(),
             false,
             None,
+            None,
         );
 
         // Now start compaction 2 and let it run completely using the compact() function
@@ -3014,6 +3037,7 @@ mod tests {
             spann_provider.clone(),
             dispatcher_handle.clone(),
             false,
+            None,
             None,
             None,
         ));
@@ -3273,6 +3297,7 @@ mod tests {
             false,
             None,
             None,
+            None,
         ))
         .await
         .expect("First compaction should succeed");
@@ -3361,6 +3386,7 @@ mod tests {
             true, // is_function_disabled = true
             None,
             None,
+            None,
         ))
         .await
         .expect("Second compaction should succeed");
@@ -3421,6 +3447,7 @@ mod tests {
             test_segments.spann_provider.clone(),
             dispatcher_handle.clone(),
             false, // is_function_disabled = false for rebuild
+            None,
             None,
             None,
         ))
